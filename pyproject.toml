@@ -13,6 +13,8 @@ Hydra = "^2.5"
 torch = "^1.12.0"
 pytorch-lightning = "^1.6.5"
 jupyter = "^1.0.0"
+tables = "^3.7.0"
+h5py = "^3.7.0"
 
 [tool.poetry.dev-dependencies]
 
