@@ -4,6 +4,7 @@ import h5py
 import numpy as np
 import pandas as pd
 
+log = logging.getLogger(__name__)
 
 class Mimic3Pipeline():
     def __init__(
@@ -11,7 +12,7 @@ class Mimic3Pipeline():
         ):
         self.work_dir = work_dir
         self.input = pd.HDFStore(work_dir + "/data/all_hourly_data.h5")
-        self.output = h5py.File(work_dir + "/data/mimic3_preprocessed.hdf5")
+        self.output = h5py.File(work_dir + "/data/mimic3_preprocessed.hdf5", "w")
         self.min_length = length_range[0]
         self.max_length = length_range[1]
         self.min_code_counts = min_code_count
@@ -20,6 +21,7 @@ class Mimic3Pipeline():
         self.arrays = {}
 
     def run(self):
+        log.info("Beginning pipeline")
         output_dir = self.work_dir + "/data/mimic3_preprocessed.hdf5"
         # build index of patients
         interventions = self.input["interventions"].reset_index()
@@ -28,23 +30,26 @@ class Mimic3Pipeline():
             (stay_lengths >= self.min_length) & (stay_lengths <= self.max_length)
             ]
         self.stay_lengths.name="stay_length"
-        self.arrays["index"] = self.stay_lengths.index
+        self.arrays["index"] = self.stay_lengths.index.to_numpy()
         # load semisynth label probabilities
-        self.arrays["outcome_probs"] = pd.read_csv(
+        outcome_probs  = pd.read_csv(
             self.work_dir + "/data/outcome_probs.csv", index_col=0
             )
+        self.arrays["outcome_probs"] = outcome_probs.to_numpy()
         assert np.array_equal(
-            self.arrays["index"], self.arrays["outcome_probs"].index
+            self.arrays["index"], outcome_probs.index.to_numpy()
             )
         self.extract_treatment(interventions)
         self.process_patients_data()
         self.process_codes()
         self.process_vitals()
         # write out:
+        log.info("Writing data")
         for key, arr in self.arrays.items():
             self.output.create_dataset(
                 key, data=arr
             )
+        log.info("Pipeline completed")
 
         
     def extract_treatment(self, interventions):
@@ -66,6 +71,7 @@ class Mimic3Pipeline():
 
 
     def process_codes(self):
+        log.info("Processing codes")
         codes = self.input["codes"].reset_index()[["subject_id", "icd9_codes"]].drop_duplicates(["subject_id"])
         codes = codes.set_index("subject_id").join(self.stay_lengths, how="right")
         codes = codes.explode("icd9_codes")
@@ -76,12 +82,13 @@ class Mimic3Pipeline():
         codes = codes.merge(code_counts, left_on="icd9_codes", right_index=True, how="left")
         codes["icd9_codes"] = codes["icd9_codes"].mask(codes["count"].isna())
         codes["icd9_codes"] = codes["icd9_codes"].fillna("unk")
-        self.arrays["code_index"] = codes.index
+        self.arrays["code_index"] = codes.index.to_numpy()
         self.arrays["code_lookup"], self.arrays["codes"] = np.unique(
             codes["icd9_codes"], return_inverse=True
             )
 
     def process_vitals(self):
+        log.info("Processing vitals")
         vitals = self.input["vitals_labs_mean"].droplevel(['hadm_id', 'icustay_id'])
         vitals.columns = vitals.columns.get_level_values(0)
         vitals_list = vitals.notna().sum(0).sort_values(ascending=False).head(self.n_vitals).index
@@ -92,5 +99,5 @@ class Mimic3Pipeline():
         std = np.std(vitals, axis=0)
         vitals = (vitals - mean) / std
         vitals = vitals.join(self.stay_lengths, how="right").drop(columns = "stay_length")
-        self.arrays["vitals_index"] = vitals.index.get_level_values(0)
+        self.arrays["vitals_index"] = vitals.index.get_level_values(0).to_numpy()
         self.arrays["vitals"] = vitals.to_numpy()
