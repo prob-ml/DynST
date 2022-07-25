@@ -1,2 +1,12 @@
 preprocess:
   do: False
+
+train:
+  train_frac: .8
+  random_seed: 87
+  gpus:
+    - 1 
+  max_epochs: 2
+  batch_size: 16
+
+seed: 87

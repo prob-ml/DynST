@@ -22,7 +22,6 @@ class Mimic3Pipeline():
 
     def run(self):
         log.info("Beginning pipeline")
-        output_dir = self.work_dir + "/data/mimic3_preprocessed.hdf5"
         # build index of patients
         interventions = self.input["interventions"].reset_index()
         stay_lengths = interventions.groupby("subject_id").size()

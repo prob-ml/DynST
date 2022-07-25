@@ -1,7 +1,13 @@
 import hydra
 from hydra.utils import get_original_cwd
+import torch
+from torch.utils.data import DataLoader, random_split
+import pytorch_lightning as pl
+from pytorch_lightning.callbacks import ModelCheckpoint
 
-from src import Mimic3Pipeline,Mimic3Dataset
+from src.preprocess import Mimic3Pipeline
+from src.dataset import Mimic3Dataset, padded_collate
+from src.model import BaseModel
   
 @hydra.main(config_path=".", config_name="config.yaml")
 def main(cfg=None):
@@ -10,8 +16,41 @@ def main(cfg=None):
         pipeline = Mimic3Pipeline(owd)
         pipeline.run()
         return
-    dataset = Mimic3Dataset(owd)
-    pass
+    dataset = Mimic3Dataset(owd, cfg.seed)
+    train_size = int(cfg.train.train_frac * len(dataset))
+    val_size = len(dataset) - train_size
+    train_set, val_set = random_split(
+        dataset,
+        (train_size, val_size),
+        torch.Generator().manual_seed(cfg.seed)
+    )
+    train_loader = DataLoader(
+        train_set,
+        collate_fn = padded_collate,
+        batch_size = cfg.train.batch_size,
+        shuffle=True
+    )
+    val_loader = DataLoader(
+        val_set, collate_fn = padded_collate, batch_size = cfg.train.batch_size
+    )
+    model = BaseModel()
+    callbacks = [ModelCheckpoint(monitor="val_loss")]
+    trainer = pl.Trainer(
+        gpus=cfg.train.gpus,
+        max_epochs=cfg.train.max_epochs,
+        callbacks=callbacks,
+    )
+    trainer.fit(model, train_loader, val_loader)
+
+
+
+
+
+    # build data loaders for train & val
+    # create model
+    # initialize trainer
+
+
 
 if __name__ == "__main__":
     main()
