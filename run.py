@@ -1,5 +1,5 @@
 import hydra
-from hydra.utils import get_original_cwd
+from hydra.utils import get_original_cwd, instantiate
 import torch
 from torch.utils.data import DataLoader, random_split
 import pytorch_lightning as pl
@@ -7,7 +7,6 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 
 from src.preprocess import Mimic3Pipeline
 from src.dataset import Mimic3Dataset, padded_collate
-from src.model import BaseModel
   
 @hydra.main(config_path=".", config_name="config.yaml")
 def main(cfg=None):
@@ -24,16 +23,19 @@ def main(cfg=None):
         (train_size, val_size),
         torch.Generator().manual_seed(cfg.seed)
     )
+    collate_fn = lambda x: padded_collate(x, cfg.model.pad)
     train_loader = DataLoader(
         train_set,
-        collate_fn = padded_collate,
+        collate_fn = collate_fn,
         batch_size = cfg.train.batch_size,
         shuffle=True
     )
     val_loader = DataLoader(
-        val_set, collate_fn = padded_collate, batch_size = cfg.train.batch_size
+        val_set, collate_fn = collate_fn, batch_size = cfg.train.batch_size
     )
-    model = BaseModel()
+    model = instantiate(
+        cfg.model, n_codes=dataset.n_codes, n_vitals=dataset.n_vitals,
+    )
     callbacks = [ModelCheckpoint(monitor="val_loss")]
     trainer = pl.Trainer(
         gpus=cfg.train.gpus,

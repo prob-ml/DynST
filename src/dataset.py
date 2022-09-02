@@ -3,16 +3,19 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
+from torch.nn.utils.rnn import pad_sequence
+import pdb
 
 class Mimic3Dataset(Dataset):
     def __init__(self, work_dir, seed):
+        # TODO: load data set by random seed
         self.f = h5py.File(work_dir + "/data/mimic3_preprocessed.hdf5")
-        np.random.seed(seed)
-        self.outcomes = np.random.binomial(
-            n=1, p=self.f["outcome_probs"][:, 0]
-        )
-        self.ix = self.f["index"]
-        self.code_lookup = self.f["code_lookup"]
+        self.ix = self.f["patient_index"]
+        self.code_lookup = np.insert(self.f["code_lookup"], 0, "pad")
+        self.codes = self.f["codes"][...] + 1
+        self.n_codes = len(self.code_lookup)
+        self.n_vitals = self.f["vitals"].shape[1]
+        self.pad_value = - 100
 
 
     def __len__(self):
@@ -24,25 +27,33 @@ class Mimic3Dataset(Dataset):
         item["treatment"] = self.f["treatment"][index]
         item["demog"] = self.f["demog"][index]
         item["codes"] = torch.tensor(
-            self.f["codes"][self.f["code_index"] == j]
+            self.pad_bincount(self.f["codes"][self.f["code_index"] == j])
         )
         item["vitals"] = torch.tensor(
-            self.f["vitals"][self.f["vitals_index"] == j]
+            self.f["vitals"][self.f["hourly_index"] == j]
+        ).float()
+        item["survival"] = torch.tensor(
+            self.f["survival"][self.f["hourly_index"] == j]
         )
-        item["outcome"] = self.outcomes[index]
         return item
 
-def padded_collate(batch):
+    def pad_bincount(self, records):
+        # get counts of each cod
+        records = np.bincount(records)
+        # pad each vector to length T, all possible codes
+        padded = np.zeros(self.n_codes)
+        padded[: len(records)] = records
+        return torch.from_numpy(padded).float()
+
+def padded_collate(batch, pad_index):
     res = {}
     res["treatment"] = torch.tensor([d["treatment"] for d in batch])
     res["demog"] = torch.tensor([d["demog"] for d in batch])
-    res["outcome"] = torch.tensor([d["outcome"] for d in batch])
-
-
-def pad_bincount(records, n_codes):
-    # get counts of each cod
-    records = np.bincount(records)
-    # pad each vector to length T, all possible codes
-    padded = np.zeros(n_codes)
-    padded[: len(records)] = records
-    return torch.from_numpy(padded).float()
+    res["codes"] = torch.stack([d["codes"] for d in batch])
+    res["vitals"] = pad_sequence(
+        [d["vitals"] for d in batch], batch_first=True, padding_value=pad_index
+    )
+    res["survival"] = pad_sequence(
+        [d["survival"] for d in batch], batch_first=True, padding_value=pad_index
+    )
+    return res

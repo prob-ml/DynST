@@ -7,6 +7,14 @@ train:
   gpus:
     - 1 
   max_epochs: 2
-  batch_size: 16
+  batch_size: 32
 
 seed: 87
+
+model:
+  _target_: src.model.DST
+  d_model: 16
+  n_blocks: 4
+  n_heads: 8
+  dropout: .1
+  pad: -100

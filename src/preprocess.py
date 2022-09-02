@@ -12,7 +12,7 @@ class Mimic3Pipeline():
         ):
         self.work_dir = work_dir
         self.input = pd.HDFStore(work_dir + "/data/all_hourly_data.h5")
-        self.output = h5py.File(work_dir + "/data/mimic3_preprocessed.hdf5", "w")
+        self.output = h5py.File(work_dir + f"/data/mimic3_preprocessed_{seed}.hdf5", "w")
         self.min_length = length_range[0]
         self.max_length = length_range[1]
         self.min_code_counts = min_code_count
@@ -26,7 +26,7 @@ class Mimic3Pipeline():
         self.seed = seed
         np.random.seed(seed)
         # static coefficients
-        self.beta = np.random.uniform(0.25, 0.75, size=5)
+        self.beta = np.random.uniform(0.5, 1, size=5)
         # dynamic coefficients
         self.gamma = np.random.uniform(-0.3, -0.1, size=4)
         # treatment effect on hazards
@@ -48,12 +48,12 @@ class Mimic3Pipeline():
         self.process_vitals()
         self.arrays["hourly_index"] = self.vitals.index.get_level_values(0)
         # generate labels
-        df =  self.generate_labels()
-        df_sim = self.corrected_survival_labels(df)
+        self.features = self.semisynth_features()
+        df_sim =  self.generate_labels(self.features)
         self.arrays["survival"] = df_sim["corrected_survival"].to_numpy()
         self.arrays["hazards"] = df_sim["hazard"].to_numpy()
         # TODO: log some summary statistics
-        self.summary_statistics(df, df_sim)
+        self.summary_statistics(df_sim)
 
         log.info("Writing data")
         for key, arr in self.arrays.items():
@@ -115,28 +115,27 @@ class Mimic3Pipeline():
         # self.arrays["vitals_index"] = self.vitals.index.get_level_values(0).to_numpy()
         self.arrays["vitals"] = self.vitals.to_numpy()
 
-    def generate_labels(self, treatment_col="vent"):
-        df = self.semisynth_features()
+    def generate_labels(self, df, treatment_col="vent"):
         df["treated"] = 1
-        df["control"] = 1
+        df["control"] = 0
         df["baseline_hazard"] = self.H0 * np.exp(- self.labda * df.index.get_level_values(1))
         # apply treatment
-        # TODO: can we simulate interventions here?
         # column can be "vent", "control" (all zero), or "treat" (all one)
-        df["hazard"] = df["baseline_hazard"] * np.exp(self.alpha * df["vent"])
+        df["hazard"] = df["baseline_hazard"] * np.exp(self.alpha * df[treatment_col])
         # get static predictors
         X = df[["gender", "stay_length", "hypertension", "coronary_ath", "atrial_fib"]].to_numpy()
         df["hazard"] = df["hazard"] * np.exp((X * self.beta).sum(1))
         # get dynamic predictors
         V = df[["hematocrit", "hemoglobin", "platelets", "mean blood pressure"]].to_numpy()
-        assert df["hazard"].max() < 0.25
+        df["hazard"] = df["hazard"] * np.exp((V * self.gamma).sum(1))
+        df["hazard"] = np.clip(df["hazard"], a_min = None, a_max = 0.1)
         # switch from hazards to cumulative survival probabilities
-        df["log_q"] = np.log(1 - df["hazard"])
-        df["survival_prob"] = np.exp(df.groupby("subject_id")["log_q"].cumsum())
+        df["q"] = 1 - df["hazard"]
+        df["survival_prob"] = df.groupby("subject_id")["q"].cumprod()
         # bernoulli simulation of survival
         np.random.seed(self.seed)
         df["survives"] = np.random.binomial(1, df["survival_prob"])
-        return df
+        return self.corrected_survival_labels(df)
 
 
     def semisynth_features(self):
@@ -174,21 +173,21 @@ class Mimic3Pipeline():
         df_sim["corrected_survival"] = df_sim["corrected_survival"].mask(df_sim["first_failure"].fillna(False), 0)
         return df_sim
 
-    def summary_statistics(self, df, df_sim):
-        n = df.reset_index()["subject_id"].nunique()
+    def summary_statistics(self, df_sim):
+        n = df_sim.reset_index()["subject_id"].nunique()
         c = df_sim[df_sim["first_failure"] == True].shape[0]
         log.info(f"{n:,} total patients")
-        log.info("{c:,} censored ({100*c/n:.21} %)")
+        log.info(f"{n - c:,} censored ({100*(n - c)/n:.2f} %)")
         lifetimes = df_sim.groupby(level=0)["corrected_survival"].sum().to_numpy()
         treated_ix = df_sim.groupby(level=0)["vent"].any()
         log.info(f"Restricted mean lifetime: {np.mean(lifetimes):.2f} hours")
         unadj_ate = lifetimes[treated_ix].mean() - lifetimes[~treated_ix].mean()
         log.info(f"Observed treatment effect: {unadj_ate:.2f} hours")
-        df_treated = self.generate_labels(df, "treated")
+        df_treated = self.generate_labels(self.features, "treated")
         mlt_treated = np.mean(
             df_treated.groupby(level=0)["corrected_survival"].sum().to_numpy()
         )
-        df_control = self.generate_labels(df, "control")
+        df_control = self.generate_labels(self.features, "control")
         mlt_control = np.mean(
             df_control.groupby(level=0)["corrected_survival"].sum().to_numpy()
         )
