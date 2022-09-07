@@ -20,13 +20,10 @@ class DST(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
-        # embed codes
-        # todo: embedding dimension vs. "total" feature space
-        # TODO: how to handle padding?
+        # TODO: incorporate demographic info
         self.embed_codes = Linear(n_codes, d_model)
         self.embed_vitals = Linear(n_vitals, d_model)
         self.pos_encode = PositionalEncoding(d_model)
-        # self.pos_encode = PositionalEncoding(d_model=d_model)
         self.pad = pad
         encoder_layer = torch.nn.TransformerEncoderLayer(
             d_model = d_model,
@@ -41,7 +38,7 @@ class DST(pl.LightningModule):
             Linear(d_model+1, d_model//2),
             torch.nn.ReLU(),
             Linear(d_model//2, 1),
-            torch.nn.Softmax(),
+            torch.nn.Sigmoid(),
         )
 
 
@@ -50,6 +47,7 @@ class DST(pl.LightningModule):
         x = self.embed_codes(batch["codes"]).unsqueeze(1)
         # time-varying features
         x = x + self.embed_vitals(batch["vitals"])
+        # TODO: concatenate all this...
         pad_mask = (batch["vitals"][:, :, 0] == self.pad)
         # (max) sequence length
         s = x.shape[1]
@@ -60,24 +58,27 @@ class DST(pl.LightningModule):
         t = torch.reshape(batch["treatment"], (-1, 1, 1))
         t = t.repeat(1, s, 1)
         # concatenate treatment as a new feature
-        x = torch.cat((x, t), 2)
+        x = torch.cat((x, t), 2).float()
+        # complement of hazard
         q_hat = self.to_hazard_c(x).squeeze(2)
         s_hat = q_hat.cumprod(1).clamp(min=1e-8)
-        return s_hat
+        return q_hat, s_hat
 
 
 
     def training_step(self, batch, batch_idx):
-        s_hat =  self(batch)
+        q_hat, s_hat =  self(batch)
         loss = self.ordinal_survival_loss(s_hat, batch["survival"])
+        # loss = self.loss_fn(s_hat, batch["survival"])
         self.log("train_loss", loss)
         return loss
 
 
 
     def validation_step(self, batch, batch_idx):
-        s_hat =  self(batch)
+        q_hat, s_hat =  self(batch)
         loss = self.ordinal_survival_loss(s_hat, batch["survival"])
+        # loss = self.loss_fn(s_hat, batch["survival"])
         self.log("val_loss", loss)
         return loss
 
@@ -85,12 +86,15 @@ class DST(pl.LightningModule):
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=self.hparams.lr)
 
-    @staticmethod
-    def ordinal_survival_loss(s_hat, y):
+    def ordinal_survival_loss(self, s_hat, y, pad=-100):
+        # modified cross entropy loss
         nlog_survival = -torch.log(s_hat)
         nlog_failure = -torch.log(1 - s_hat)
-        return nlog_survival[y == 1].mean() + nlog_failure[y == 0].mean()
-
+        loss = 0
+        loss += nlog_survival * torch.where(y==self.pad, 0, y)
+        loss += nlog_failure * torch.where(y==self.pad, 0, (1-y))
+        return loss.sum() / (y != self.pad).sum()
+        # TODO: tweak this loss function ... 
 
 class PositionalEncoding(torch.nn.Module):
 
