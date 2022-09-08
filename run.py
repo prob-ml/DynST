@@ -7,6 +7,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 
 from src.preprocess import Mimic3Pipeline
 from src.dataset import Mimic3Dataset, padded_collate
+import pdb
   
 @hydra.main(config_path=".", config_name="config.yaml")
 def main(cfg=None):
@@ -34,7 +35,8 @@ def main(cfg=None):
         val_set, collate_fn = collate_fn, batch_size = cfg.train.batch_size
     )
     model = instantiate(
-        cfg.model, n_codes=dataset.n_codes, n_vitals=dataset.n_vitals,
+        cfg.model, n_codes=dataset.n_codes, n_demog = dataset.n_demog, 
+        n_vitals=dataset.n_vitals,
     )
     callbacks = [ModelCheckpoint(monitor="val_loss")]
     trainer = pl.Trainer(

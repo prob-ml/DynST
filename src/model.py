@@ -4,24 +4,28 @@ import math
 import pdb
 
 from torch.nn import Linear
+from .metric import MeanAbsoluteError, ConcordanceIndex
 
 class DST(pl.LightningModule):
     def __init__(
         self,
         n_codes,
         n_vitals,
+        n_demog,
         d_model,
         n_blocks,
         n_heads,
         dropout,
         pad,
-        lr=0.001
+        lr=0.001,
+        alpha=0.01,
     ):
         super().__init__()
         self.save_hyperparameters()
 
         # TODO: incorporate demographic info
         self.embed_codes = Linear(n_codes, d_model)
+        self.embed_static = Linear(d_model + n_demog, d_model)
         self.embed_vitals = Linear(n_vitals, d_model)
         self.pos_encode = PositionalEncoding(d_model)
         self.pad = pad
@@ -40,14 +44,21 @@ class DST(pl.LightningModule):
             Linear(d_model//2, 1),
             torch.nn.Sigmoid(),
         )
+        self.train_mae = MeanAbsoluteError(pad=pad)
+        self.val_mae = MeanAbsoluteError(pad=pad)
+        self.val_ci = ConcordanceIndex(pad=pad)
+        # how much to weigh MAE loss
+        self.alpha = alpha
 
 
     def forward(self, batch):
         # static features
         x = self.embed_codes(batch["codes"]).unsqueeze(1)
+        x = self.embed_static(
+            torch.cat([x, batch["demog"].unsqueeze(1)], 2)
+        )
         # time-varying features
         x = x + self.embed_vitals(batch["vitals"])
-        # TODO: concatenate all this...
         pad_mask = (batch["vitals"][:, :, 0] == self.pad)
         # (max) sequence length
         s = x.shape[1]
@@ -68,25 +79,32 @@ class DST(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         q_hat, s_hat =  self(batch)
-        loss = self.ordinal_survival_loss(s_hat, batch["survival"])
+        loss = self.combined_loss(s_hat, batch["survival"])
         # loss = self.loss_fn(s_hat, batch["survival"])
         self.log("train_loss", loss)
+        self.train_mae(s_hat, batch["survival"])
+        self.log("train_mae", self.train_mae, on_step=True, on_epoch=False)
         return loss
 
 
 
     def validation_step(self, batch, batch_idx):
         q_hat, s_hat =  self(batch)
-        loss = self.ordinal_survival_loss(s_hat, batch["survival"])
+        loss = self.combined_loss(s_hat, batch["survival"])
         # loss = self.loss_fn(s_hat, batch["survival"])
+        self.val_mae.update(s_hat, batch["survival"])
+        self.val_ci.update(s_hat, batch["survival"])
+        # TODO: separately log ordinal loss
         self.log("val_loss", loss)
+        self.log("val_mae", self.val_mae, on_step=True, on_epoch=True)
+        self.log("val_ci", self.val_ci, on_step=True, on_epoch=True)
         return loss
 
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=self.hparams.lr)
 
-    def ordinal_survival_loss(self, s_hat, y, pad=-100):
+    def ordinal_survival_loss(self, s_hat, y):
         # modified cross entropy loss
         nlog_survival = -torch.log(s_hat)
         nlog_failure = -torch.log(1 - s_hat)
@@ -94,7 +112,21 @@ class DST(pl.LightningModule):
         loss += nlog_survival * torch.where(y==self.pad, 0, y)
         loss += nlog_failure * torch.where(y==self.pad, 0, (1-y))
         return loss.sum() / (y != self.pad).sum()
-        # TODO: tweak this loss function ... 
+    
+    def mae_loss(self, s_hat, y):
+        observed = (y == 0).any(1).int()
+        t_hat = torch.where(y == self.pad, 0, s_hat).sum(1)
+        t = torch.where(y == self.pad, 0, y).sum(1)
+        zeros = torch.zeros(t.shape).cuda()
+        observed_error = torch.abs(t_hat - t) * observed
+        censored_error = torch.maximum(zeros, t - t_hat) * (1 - observed)
+        return (observed_error.sum() + censored_error.sum()) / t.numel()
+
+    def combined_loss(self, s_hat, y):
+        a = self.alpha
+        ordinal_loss = self.ordinal_survival_loss(s_hat, y)
+        mae_loss = self.mae_loss(s_hat, y)
+        return (1 - a) * ordinal_loss + a * mae_loss
 
 class PositionalEncoding(torch.nn.Module):
 

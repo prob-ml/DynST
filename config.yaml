@@ -6,15 +6,18 @@ train:
   random_seed: 87
   gpus:
     - 1 
-  max_epochs: 8
+  max_epochs: 3
   batch_size: 16
 
 seed: 87
 
 model:
-  _target_: src.model.DST
+  _target_: "src.model.DST"
   d_model: 32
   n_blocks: 3
   n_heads: 8
   dropout: .1
   pad: -100
+  dynamic: True
+  lr: 0.001
+  alpha: 0.01

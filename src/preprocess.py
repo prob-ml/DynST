@@ -176,22 +176,29 @@ class Mimic3Pipeline():
     def summary_statistics(self, df_sim):
         n = df_sim.reset_index()["subject_id"].nunique()
         c = df_sim[df_sim["first_failure"] == True].shape[0]
+        tau = 16
         log.info(f"{n:,} total patients")
         log.info(f"{n - c:,} censored ({100*(n - c)/n:.2f} %)")
         lifetimes = df_sim.groupby(level=0)["corrected_survival"].sum().to_numpy()
         treated_ix = df_sim.groupby(level=0)["vent"].any()
-        log.info(f"Restricted mean lifetime: {np.mean(lifetimes):.2f} hours")
-        unadj_ate = lifetimes[treated_ix].mean() - lifetimes[~treated_ix].mean()
+        log.info(f"Mean time to censoring or failure: {np.mean(lifetimes):.2f} hours")
+        rst = self.rmst(df_sim, tau)
+        log.info(f"Mean restricted survival time: {np.mean(rst):.2f} hours, tau = {tau}")
+        unadj_ate = rst[treated_ix].mean() - rst[~treated_ix].mean()
         log.info(f"Observed treatment effect: {unadj_ate:.2f} hours")
+
+
         df_treated = self.generate_labels(self.features, "treated")
-        mlt_treated = np.mean(
-            df_treated.groupby(level=0)["corrected_survival"].sum().to_numpy()
-        )
+        rmst_treated = np.mean(self.rmst(df_treated))
         df_control = self.generate_labels(self.features, "control")
-        mlt_control = np.mean(
-            df_control.groupby(level=0)["corrected_survival"].sum().to_numpy()
-        )
-        log.info(f"True treatment effect: {mlt_treated - mlt_control:.2f} hours") 
+        rmst_control = np.mean(self.rmst(df_control))
+        log.info(f"True treatment effect: {rmst_treated - rmst_control:.2f} hours")
+
+    @staticmethod
+    def rmst(df, tau):
+        restr = df.groupby(level=0)["corrected_survival"].head(tau)
+        rst = restr.groupby(level=0).sum()
+        return rst.to_numpy()
 
 
 

@@ -15,6 +15,7 @@ class Mimic3Dataset(Dataset):
         self.codes = self.f["codes"][...] + 1
         self.n_codes = len(self.code_lookup)
         self.n_vitals = self.f["vitals"].shape[1]
+        self.n_demog = self.f["demog"].shape[1]
         self.pad_value = - 100
 
 
@@ -48,7 +49,7 @@ class Mimic3Dataset(Dataset):
 def padded_collate(batch, pad_index):
     res = {}
     res["treatment"] = torch.tensor([d["treatment"] for d in batch])
-    res["demog"] = torch.tensor([d["demog"] for d in batch])
+    res["demog"] = torch.tensor([d["demog"] for d in batch]).float()
     res["codes"] = torch.stack([d["codes"] for d in batch])
     res["vitals"] = pad_sequence(
         [d["vitals"] for d in batch], batch_first=True, padding_value=pad_index
