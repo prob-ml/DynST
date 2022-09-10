@@ -1,2 +1,2 @@
-# CAST-EHR
-Causally Attentive Survival Transformers for Electronic Health Records
+# DynST
+Dynamic Survival Models for Inference on Electronic Health Records
