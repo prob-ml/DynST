@@ -16,6 +16,8 @@ tables = "^3.7.0"
 h5py = "^3.7.0"
 hydra-core = "^1.2.0"
 matplotlib = "^3.5.3"
+lifelines = "^0.27.2"
+sklearn = "^0.0"
 
 [tool.poetry.dev-dependencies]
 

@@ -25,6 +25,7 @@ class MeanAbsoluteError(Metric):
         return self.error / self.total
 
 class ConcordanceIndex(Metric):
+    higher_is_better = True
     def __init__(self, pad):
         super().__init__()
         self.pad = pad

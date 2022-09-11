@@ -17,6 +17,7 @@ class DST(pl.LightningModule):
         n_heads,
         dropout,
         pad,
+        dynamic,
         lr=0.001,
         alpha=0.01,
     ):
@@ -49,6 +50,7 @@ class DST(pl.LightningModule):
         self.val_ci = ConcordanceIndex(pad=pad)
         # how much to weigh MAE loss
         self.alpha = alpha
+        self.dynamic = dynamic
 
 
     def forward(self, batch):
@@ -57,12 +59,18 @@ class DST(pl.LightningModule):
         x = self.embed_static(
             torch.cat([x, batch["demog"].unsqueeze(1)], 2)
         )
+        s = batch["vitals"].shape[1]
         # time-varying features
-        x = x + self.embed_vitals(batch["vitals"])
-        pad_mask = (batch["vitals"][:, :, 0] == self.pad)
-        # (max) sequence length
-        s = x.shape[1]
-        mask = (1 - torch.tril(torch.ones(s, s))).bool().cuda()
+        if self.dynamic:
+            pad_mask = (batch["vitals"][:, :, 0] == self.pad)
+            x = x + self.embed_vitals(batch["vitals"])
+            # autoregressive mask
+            mask = (1 - torch.tril(torch.ones(s, s))).bool().cuda()
+
+        else:
+            mask = None
+            x = x.repeat(1, s, 1)
+            pad_mask = (batch["vitals"][:, :, 0] == self.pad)
         x = self.pos_encode(x)
         x = self.transformer(x, mask, pad_mask)
         # concatenate treatment?
@@ -73,12 +81,12 @@ class DST(pl.LightningModule):
         # complement of hazard
         q_hat = self.to_hazard_c(x).squeeze(2)
         s_hat = q_hat.cumprod(1).clamp(min=1e-8)
-        return q_hat, s_hat
+        return s_hat
 
 
 
     def training_step(self, batch, batch_idx):
-        q_hat, s_hat =  self(batch)
+        s_hat =  self(batch)
         loss = self.combined_loss(s_hat, batch["survival"])
         # loss = self.loss_fn(s_hat, batch["survival"])
         self.log("train_loss", loss)
@@ -89,7 +97,7 @@ class DST(pl.LightningModule):
 
 
     def validation_step(self, batch, batch_idx):
-        q_hat, s_hat =  self(batch)
+        s_hat =  self(batch)
         loss = self.combined_loss(s_hat, batch["survival"])
         # loss = self.loss_fn(s_hat, batch["survival"])
         self.val_mae.update(s_hat, batch["survival"])
@@ -99,6 +107,12 @@ class DST(pl.LightningModule):
         self.log("val_mae", self.val_mae, on_step=True, on_epoch=True)
         self.log("val_ci", self.val_ci, on_step=True, on_epoch=True)
         return loss
+
+    def predict_step(self, batch, batch_idx):
+        # returns estimated survival times
+        s_hat = self(batch)
+        mask = (batch["survival"] != self.pad)
+        return (s_hat * mask).sum(1)
 
 
     def configure_optimizers(self):

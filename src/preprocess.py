@@ -60,6 +60,7 @@ class Mimic3Pipeline():
             self.output.create_dataset(
                 key, data=arr
             )
+        df_sim.to_csv(self.work_dir + f"/data/mimic3_df_{self.seed}.csv")
         log.info("Pipeline completed")
 
         
@@ -189,9 +190,9 @@ class Mimic3Pipeline():
 
 
         df_treated = self.generate_labels(self.features, "treated")
-        rmst_treated = np.mean(self.rmst(df_treated))
+        rmst_treated = np.mean(self.rmst(df_treated, tau))
         df_control = self.generate_labels(self.features, "control")
-        rmst_control = np.mean(self.rmst(df_control))
+        rmst_control = np.mean(self.rmst(df_control, tau))
         log.info(f"True treatment effect: {rmst_treated - rmst_control:.2f} hours")
 
     @staticmethod

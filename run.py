@@ -16,7 +16,7 @@ def main(cfg=None):
         pipeline = Mimic3Pipeline(owd)
         pipeline.run()
         return
-    dataset = Mimic3Dataset(owd, cfg.seed)
+    dataset = Mimic3Dataset(owd)
     train_size = int(cfg.train.train_frac * len(dataset))
     val_size = len(dataset) - train_size
     train_set, val_set = random_split(
@@ -38,7 +38,7 @@ def main(cfg=None):
         cfg.model, n_codes=dataset.n_codes, n_demog = dataset.n_demog, 
         n_vitals=dataset.n_vitals,
     )
-    callbacks = [ModelCheckpoint(monitor="val_loss")]
+    callbacks = [ModelCheckpoint(monitor="val_ci", mode="max")]
     trainer = pl.Trainer(
         gpus=cfg.train.gpus,
         max_epochs=cfg.train.max_epochs,

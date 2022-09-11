@@ -4,3 +4,5 @@ outputs/
 __pycache__/
 notebooks/
 multirun/
+lightning_logs/
+research_notes.md

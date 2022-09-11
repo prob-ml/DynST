@@ -7,8 +7,7 @@ from torch.nn.utils.rnn import pad_sequence
 import pdb
 
 class Mimic3Dataset(Dataset):
-    def __init__(self, work_dir, seed):
-        # TODO: load data set by random seed
+    def __init__(self, work_dir, intervention=None):
         self.f = h5py.File(work_dir + "/data/mimic3_preprocessed.hdf5")
         self.ix = self.f["patient_index"]
         self.code_lookup = np.insert(self.f["code_lookup"], 0, "pad")
@@ -17,6 +16,9 @@ class Mimic3Dataset(Dataset):
         self.n_vitals = self.f["vitals"].shape[1]
         self.n_demog = self.f["demog"].shape[1]
         self.pad_value = - 100
+        # if supplied, represents treatment (True) or control (False)
+        self.intervention = intervention
+
 
 
     def __len__(self):
@@ -25,7 +27,10 @@ class Mimic3Dataset(Dataset):
     def __getitem__(self, index):
         item = {}
         j = self.ix[index]
-        item["treatment"] = self.f["treatment"][index]
+        if self.intervention is None:
+            item["treatment"] = self.f["treatment"][index]
+        else:
+            item["treatment"] = int(self.intervention)
         item["demog"] = self.f["demog"][index]
         item["codes"] = torch.tensor(
             self.pad_bincount(self.f["codes"][self.f["code_index"] == j])
@@ -48,8 +53,8 @@ class Mimic3Dataset(Dataset):
 
 def padded_collate(batch, pad_index):
     res = {}
-    res["treatment"] = torch.tensor([d["treatment"] for d in batch])
-    res["demog"] = torch.tensor([d["demog"] for d in batch]).float()
+    res["treatment"] = torch.tensor(np.array([d["treatment"] for d in batch]))
+    res["demog"] = torch.tensor(np.array([d["demog"] for d in batch])).float()
     res["codes"] = torch.stack([d["codes"] for d in batch])
     res["vitals"] = pad_sequence(
         [d["vitals"] for d in batch], batch_first=True, padding_value=pad_index
