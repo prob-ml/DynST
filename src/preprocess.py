@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 log = logging.getLogger(__name__)
+import pdb
 
 class Mimic3Pipeline():
     def __init__(
@@ -79,7 +80,7 @@ class Mimic3Pipeline():
         demog["age"] = (demog["age"] - demog["age"].mean()) / demog["age"].std()
         demog = demog.reset_index().set_index("subject_id")[["gender", "age"]]
         self.demog = demog.join(self.stay_lengths, how="right")
-        self.arrays["demog"] = self.demog.to_numpy()
+        self.arrays["demog"] = self.demog[["gender", "age"]].to_numpy()
 
 
     def process_codes(self):
@@ -113,7 +114,6 @@ class Mimic3Pipeline():
         std = np.std(vitals, axis=0)
         vitals = (vitals - mean) / std
         self.vitals = vitals.join(self.stay_lengths, how="right").drop(columns = "stay_length")
-        # self.arrays["vitals_index"] = self.vitals.index.get_level_values(0).to_numpy()
         self.arrays["vitals"] = self.vitals.to_numpy()
 
     def generate_labels(self, df, treatment_col="vent"):
@@ -124,7 +124,8 @@ class Mimic3Pipeline():
         # column can be "vent", "control" (all zero), or "treat" (all one)
         df["hazard"] = df["baseline_hazard"] * np.exp(self.alpha * df[treatment_col])
         # get static predictors
-        X = df[["gender", "stay_length", "hypertension", "coronary_ath", "atrial_fib"]].to_numpy()
+        # TODO: fix this
+        X = df[["gender", "hypertension", "coronary_ath", "atrial_fib"]].to_numpy()
         df["hazard"] = df["hazard"] * np.exp((X * self.beta).sum(1))
         # get dynamic predictors
         V = df[["hematocrit", "hemoglobin", "platelets", "mean blood pressure"]].to_numpy()

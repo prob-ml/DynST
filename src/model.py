@@ -23,10 +23,9 @@ class DST(pl.LightningModule):
     ):
         super().__init__()
         self.save_hyperparameters()
-
-        # TODO: incorporate demographic info
         self.embed_codes = Linear(n_codes, d_model)
-        self.embed_static = Linear(d_model + n_demog, d_model)
+        # this extra treatment variable shouldn't be hardcoded in...
+        self.embed_static = Linear(d_model + n_demog + 1, d_model)
         self.embed_vitals = Linear(n_vitals, d_model)
         self.pos_encode = PositionalEncoding(d_model)
         self.pad = pad
@@ -40,7 +39,7 @@ class DST(pl.LightningModule):
         norm = torch.nn.LayerNorm(d_model)
         self.transformer = torch.nn.TransformerEncoder(encoder_layer, n_blocks, norm)
         self.to_hazard_c = torch.nn.Sequential(
-            Linear(d_model+1, d_model//2),
+            Linear(d_model, d_model//2),
             torch.nn.ReLU(),
             Linear(d_model//2, 1),
             torch.nn.Sigmoid(),
@@ -57,7 +56,7 @@ class DST(pl.LightningModule):
         # static features
         x = self.embed_codes(batch["codes"]).unsqueeze(1)
         x = self.embed_static(
-            torch.cat([x, batch["demog"].unsqueeze(1)], 2)
+            torch.cat([x, batch["static"].unsqueeze(1)], 2)
         )
         s = batch["vitals"].shape[1]
         # time-varying features
@@ -73,12 +72,6 @@ class DST(pl.LightningModule):
             pad_mask = (batch["vitals"][:, :, 0] == self.pad)
         x = self.pos_encode(x)
         x = self.transformer(x, mask, pad_mask)
-        # concatenate treatment?
-        t = torch.reshape(batch["treatment"], (-1, 1, 1))
-        t = t.repeat(1, s, 1)
-        # concatenate treatment as a new feature
-        x = torch.cat((x, t), 2).float()
-        # complement of hazard
         q_hat = self.to_hazard_c(x).squeeze(2)
         s_hat = q_hat.cumprod(1).clamp(min=1e-8)
         return s_hat
