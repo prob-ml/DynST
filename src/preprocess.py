@@ -3,6 +3,7 @@ import logging
 import h5py
 import numpy as np
 import pandas as pd
+from scipy.special import expit, logit
 
 log = logging.getLogger(__name__)
 import pdb
@@ -23,13 +24,13 @@ class Mimic3Pipeline():
         # baseline hazard
         self.H0 = 0.001
         # rate of hazard decay
-        self.labda = 0.05
+        self.labda = 0.25
         self.seed = seed
         np.random.seed(seed)
         # static coefficients
-        self.beta = np.random.uniform(0.5, 1, size=5)
+        self.beta = np.random.uniform(0.7, 1.2, size=4)
         # dynamic coefficients
-        self.gamma = np.random.uniform(-0.3, -0.1, size=4)
+        self.gamma = np.random.uniform(0.1, 0.3, size=4)
         # treatment effect on hazards
         self.alpha = -0.5
 
@@ -50,13 +51,17 @@ class Mimic3Pipeline():
         self.arrays["hourly_index"] = self.vitals.index.get_level_values(0)
         # generate labels
         self.features = self.semisynth_features()
-        df_sim =  self.generate_labels(self.features)
+        # fixed interventions
+        self.features["treated"] = 1
+        self.features["control"] = 0
+        df_sim = self.simulate_treatment(self.features.copy())
+        df_sim =  self.simulate_outcomes(df_sim)
         self.arrays["survival"] = df_sim["corrected_survival"].to_numpy()
         self.arrays["hazards"] = df_sim["hazard"].to_numpy()
-        # TODO: log some summary statistics
         self.summary_statistics(df_sim)
 
         log.info("Writing data")
+        # TODO convert this to numpy?
         for key, arr in self.arrays.items():
             self.output.create_dataset(
                 key, data=arr
@@ -116,28 +121,51 @@ class Mimic3Pipeline():
         self.vitals = vitals.join(self.stay_lengths, how="right").drop(columns = "stay_length")
         self.arrays["vitals"] = self.vitals.to_numpy()
 
-    def generate_labels(self, df, treatment_col="vent"):
-        df["treated"] = 1
-        df["control"] = 0
-        df["baseline_hazard"] = self.H0 * np.exp(- self.labda * df.index.get_level_values(1))
+    def simulate_outcomes(self, df, treatment_col="A"):
+        t = df.index.get_level_values(1)
+        df["baseline_hazard"] = self.H0 * np.exp(- self.labda * t)
         # apply treatment
         # column can be "vent", "control" (all zero), or "treat" (all one)
         df["hazard"] = df["baseline_hazard"] * np.exp(self.alpha * df[treatment_col])
-        # get static predictors
-        # TODO: fix this
-        X = df[["gender", "hypertension", "coronary_ath", "atrial_fib"]].to_numpy()
-        df["hazard"] = df["hazard"] * np.exp((X * self.beta).sum(1))
-        # get dynamic predictors
-        V = df[["hematocrit", "hemoglobin", "platelets", "mean blood pressure"]].to_numpy()
-        df["hazard"] = df["hazard"] * np.exp((V * self.gamma).sum(1))
-        df["hazard"] = np.clip(df["hazard"], a_min = None, a_max = 0.1)
-        # switch from hazards to cumulative survival probabilities
+
+
+
+        X = df[["gender", "hypertension", "coronary_ath", "atrial_fib"]]
+        df["hazard"] *= np.exp((X * self.beta).sum(1))
+        # temporal interaction
+        df["critical"] = (df[["hypertension", "coronary_ath", "atrial_fib"]].sum(1) > 1).astype(int)
+        df["hazard"] *= np.exp(np.log(1.02) * t * df["critical"])
+        # time-varying variables
+        V = df[["hematocrit", "hemoglobin", "platelets", "mean blood pressure"]]
+        V = V.where(V < 0, 0)**2
+        V = V.clip(upper=3)
+        df["hazard"] *= np.exp((V * self.gamma).sum(1))
+        # stabilize hazards and convert to survival probs
+        df["hazard"] = df["hazard"].clip(lower = 1e-8, upper=0.1)
         df["q"] = 1 - df["hazard"]
         df["survival_prob"] = df.groupby("subject_id")["q"].cumprod()
-        # bernoulli simulation of survival
         np.random.seed(self.seed)
+        # add jittering
+        eps = np.random.normal(loc=0, scale=0.5, size=df["survival_prob"].shape)
+        df["survival_prob"] = expit(logit(df["survival_prob"]) + eps)
         df["survives"] = np.random.binomial(1, df["survival_prob"])
         return self.corrected_survival_labels(df)
+
+
+    def simulate_treatment(self, df):
+        # generate propensity scores
+        df_flat = df.groupby(level=0).head(1)
+        df_flat["critical"] = (
+                df_flat[["hypertension", "coronary_ath", "atrial_fib"]].sum(1) > 1
+            ).astype(int).to_numpy()
+        df_flat["propensity"] = df_flat["critical"] * 0.8 + (1 - df_flat["critical"]) * 0.2
+        np.random.seed(self.seed)
+        # randomly assign treatment
+        df_flat["A"] = np.random.binomial(1, df_flat["propensity"])
+        df = df.join(df_flat["A"], how="left")
+        df["A"].fillna(method="ffill", inplace=True)
+        return df
+
 
 
     def semisynth_features(self):
@@ -190,9 +218,9 @@ class Mimic3Pipeline():
         log.info(f"Observed treatment effect: {unadj_ate:.2f} hours")
 
 
-        df_treated = self.generate_labels(self.features, "treated")
+        df_treated = self.simulate_outcomes(self.features, "treated")
         rmst_treated = np.mean(self.rmst(df_treated, tau))
-        df_control = self.generate_labels(self.features, "control")
+        df_control = self.simulate_outcomes(self.features, "control")
         rmst_control = np.mean(self.rmst(df_control, tau))
         log.info(f"True treatment effect: {rmst_treated - rmst_control:.2f} hours")
 

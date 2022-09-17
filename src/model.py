@@ -47,6 +47,9 @@ class DST(pl.LightningModule):
         self.train_mae = MeanAbsoluteError(pad=pad)
         self.val_mae = MeanAbsoluteError(pad=pad)
         self.val_ci = ConcordanceIndex(pad=pad)
+        self.test_mae = MeanAbsoluteError(pad=pad)
+        self.test_ci = ConcordanceIndex(pad=pad)
+
         # how much to weigh MAE loss
         self.alpha = alpha
         self.dynamic = dynamic
@@ -81,7 +84,6 @@ class DST(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         s_hat =  self(batch)
         loss = self.combined_loss(s_hat, batch["survival"])
-        # loss = self.loss_fn(s_hat, batch["survival"])
         self.log("train_loss", loss)
         self.train_mae(s_hat, batch["survival"])
         self.log("train_mae", self.train_mae, on_step=True, on_epoch=False)
@@ -99,6 +101,16 @@ class DST(pl.LightningModule):
         self.log("val_loss", loss)
         self.log("val_mae", self.val_mae, on_step=True, on_epoch=True)
         self.log("val_ci", self.val_ci, on_step=True, on_epoch=True)
+        return loss
+
+
+    def test_step(self, batch, batch_idx):
+        s_hat =  self(batch)
+        loss = self.combined_loss(s_hat, batch["survival"])
+        self.test_mae.update(s_hat, batch["survival"])
+        self.test_ci.update(s_hat, batch["survival"])
+        self.log("test_mae", self.test_mae, on_step=True, on_epoch=True)
+        self.log("test_ci", self.test_ci, on_step=True, on_epoch=True)
         return loss
 
     def predict_step(self, batch, batch_idx):

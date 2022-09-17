@@ -7,8 +7,8 @@ from torch.nn.utils.rnn import pad_sequence
 import pdb
 
 class Mimic3Dataset(Dataset):
-    def __init__(self, work_dir, intervention=None):
-        self.f = h5py.File(work_dir + "/data/mimic3_preprocessed.hdf5")
+    def __init__(self, work_dir, seed, intervention=None):
+        self.f = h5py.File(work_dir + f"/data/mimic3_preprocessed_{seed}.hdf5")
         self.ix = self.f["patient_index"]
         self.code_lookup = np.insert(self.f["code_lookup"], 0, "pad")
         self.codes = self.f["codes"][...] + 1

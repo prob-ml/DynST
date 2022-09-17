@@ -1,15 +1,17 @@
 preprocess:
   do: False
+  seed: 30
+
 
 train:
-  train_frac: .8
-  random_seed: 87
+  train_frac: .7
+  val_frac: .15
   gpus:
     - 1 
   max_epochs: 3
   batch_size: 16
-
-seed: 87
+  causal: False
+  seed: 87
 
 model:
   _target_: "src.model.DST"
@@ -21,3 +23,8 @@ model:
   dynamic: True
   lr: 0.001
   alpha: 0.01
+
+hydra:
+  sweep:
+    dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}/${train.random_seed}
+    subdir: ${hydra.job.num}
