@@ -7,7 +7,6 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 
 from src.preprocess import Mimic3Pipeline
 from src.dataset import Mimic3Dataset, padded_collate
-import pdb
   
 @hydra.main(config_path=".", config_name="config.yaml")
 def main(cfg=None):
@@ -31,19 +30,19 @@ def main(cfg=None):
         (train_size, val_size, test_size),
         torch.Generator().manual_seed(cfg.train.seed)
     )
-    collate_fn = lambda x: padded_collate(x, cfg.model.pad)
+
     train_loader = DataLoader(
         train_set,
-        collate_fn=collate_fn,
+        collate_fn=collate,
         batch_size=cfg.train.batch_size,
         shuffle=True
     )
     val_loader = DataLoader(
-        val_set, collate_fn=collate_fn, batch_size=cfg.train.batch_size
+        val_set, collate_fn=collate, batch_size=cfg.train.batch_size
     )
     if test_size:
         test_loader = DataLoader(
-            test_set, collate_fn=collate_fn, batch_size=cfg.train.batch_size
+            test_set, collate_fn=collate, batch_size=cfg.train.batch_size
         )
     model = instantiate(
         cfg.model, n_codes=dataset.n_codes, n_demog = dataset.n_demog, 
@@ -63,15 +62,17 @@ def main(cfg=None):
     if cfg.train.causal:
         dataset_treated = Mimic3Dataset(owd, seed=cfg.preprocess.seed, intervention=True)
         dataset_control = Mimic3Dataset(owd, seed=cfg.preprocess.seed, intervention=False)
-        treated_loader = DataLoader(dataset_treated, collate_fn, batch_size=96)
-        control_loader = DataLoader(dataset_control, collate_fn, batch_size=96)
+        treated_loader = DataLoader(dataset_treated, collate, batch_size=96)
+        control_loader = DataLoader(dataset_control, collate, batch_size=96)
         predict_t = torch.cat(trainer.predict(dataloaders=treated_loader))
         torch.save(predict_t, "t_hat_treated.pt")
         predict_c = torch.cat(trainer.predict(dataloaders=control_loader))
         torch.save(predict_c, "t_hat_control.pt")
 
         
-    
+# TODO wire this up to the config
+def collate(x):
+    return padded_collate(x, -100)
 
 
 if __name__ == "__main__":

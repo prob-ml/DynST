@@ -1,7 +1,6 @@
 import pytorch_lightning as pl
 import torch
 import math
-import pdb
 
 from torch.nn import Linear
 from .metric import MeanAbsoluteError, ConcordanceIndex
@@ -97,7 +96,6 @@ class DST(pl.LightningModule):
         # loss = self.loss_fn(s_hat, batch["survival"])
         self.val_mae.update(s_hat, batch["survival"])
         self.val_ci.update(s_hat, batch["survival"])
-        # TODO: separately log ordinal loss
         self.log("val_loss", loss)
         self.log("val_mae", self.val_mae, on_step=True, on_epoch=True)
         self.log("val_ci", self.val_ci, on_step=True, on_epoch=True)

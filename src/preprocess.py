@@ -1,12 +1,12 @@
 import logging
 
-import h5py
+from pathlib import Path
 import numpy as np
 import pandas as pd
 from scipy.special import expit, logit
 
+
 log = logging.getLogger(__name__)
-import pdb
 
 class Mimic3Pipeline():
     def __init__(
@@ -14,7 +14,9 @@ class Mimic3Pipeline():
         ):
         self.work_dir = work_dir
         self.input = pd.HDFStore(work_dir + "/data/all_hourly_data.h5")
-        self.output = h5py.File(work_dir + f"/data/mimic3_preprocessed_{seed}.hdf5", "w")
+        Path(f"{work_dir}/data/preprocessed_{seed}").mkdir(parents=True, exist_ok=True)
+        self.outpath = f"data/preprocessed_{seed}"
+        # self.output = h5py.File(work_dir + f"/data/mimic3_preprocessed_{seed}.hdf5", "w")
         self.min_length = length_range[0]
         self.max_length = length_range[1]
         self.min_code_counts = min_code_count
@@ -61,11 +63,10 @@ class Mimic3Pipeline():
         self.summary_statistics(df_sim)
 
         log.info("Writing data")
-        # TODO convert this to numpy?
         for key, arr in self.arrays.items():
-            self.output.create_dataset(
-                key, data=arr
-            )
+            fname = f"{self.work_dir}/{self.outpath}/{key}.npy"
+            np.save(fname, arr)
+        df_sim.to_csv(f"{self.work_dir}/{self.outpath}/df_sim{self.seed}.csv")
         df_sim.to_csv(self.work_dir + f"/data/mimic3_df_{self.seed}.csv")
         log.info("Pipeline completed")
 

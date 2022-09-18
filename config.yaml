@@ -26,5 +26,5 @@ model:
 
 hydra:
   sweep:
-    dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}/${train.random_seed}
+    dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}/${train.seed}
     subdir: ${hydra.job.num}

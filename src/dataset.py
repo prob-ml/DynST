@@ -1,17 +1,21 @@
-import h5py
+import os
 import numpy as np
-import pandas as pd
 import torch
 from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
-import pdb
 
 class Mimic3Dataset(Dataset):
     def __init__(self, work_dir, seed, intervention=None):
-        self.f = h5py.File(work_dir + f"/data/mimic3_preprocessed_{seed}.hdf5")
+        fdir = f"{work_dir}/data/preprocessed_{seed}"
+        self.f = {}
+        for fname in os.listdir(fdir):
+            if fname.endswith(".npy"):
+                self.f[fname[:-4]] = np.load(
+                    f"{fdir}/{fname}", allow_pickle=True
+                    )
         self.ix = self.f["patient_index"]
         self.code_lookup = np.insert(self.f["code_lookup"], 0, "pad")
-        self.codes = self.f["codes"][...] + 1
+        self.codes = self.f["codes"] + 1
         self.n_codes = len(self.code_lookup)
         self.n_vitals = self.f["vitals"].shape[1]
         # add one for treatment variable
