@@ -56,11 +56,15 @@ class Mimic3Dataset(Dataset):
         padded[: len(records)] = records
         return torch.from_numpy(padded).float()
 
-def padded_collate(batch, pad_index):
+def padded_collate(batch, pad_index, causal=False):
     res = {}
     treatment = torch.tensor(np.array([d["treatment"] for d in batch]))
     demog = torch.tensor(np.array([d["demog"] for d in batch])).float()
-    res["static"] = torch.cat([demog, treatment.unsqueeze(1)], 1)
+    if causal:
+        res["treatment"] = torch.tensor(np.array([d["treatment"] for d in batch]))
+        res["static"] = torch.tensor(np.array([d["demog"] for d in batch])).float()
+    else:
+        res["static"] = torch.cat([demog, treatment.unsqueeze(1)], 1)
     res["codes"] = torch.stack([d["codes"] for d in batch])
     res["vitals"] = pad_sequence(
         [d["vitals"] for d in batch], batch_first=True, padding_value=pad_index

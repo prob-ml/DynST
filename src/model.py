@@ -17,6 +17,7 @@ class DST(pl.LightningModule):
         dropout,
         pad,
         dynamic,
+        causal,
         lr=0.001,
         alpha=0.01,
     ):
@@ -24,7 +25,8 @@ class DST(pl.LightningModule):
         self.save_hyperparameters()
         self.embed_codes = Linear(n_codes, d_model)
         # this extra treatment variable shouldn't be hardcoded in...
-        self.embed_static = Linear(d_model + n_demog + 1, d_model)
+        d1 = 0 if causal else 1
+        self.embed_static = Linear(d_model + n_demog + d1, d_model)
         self.embed_vitals = Linear(n_vitals, d_model)
         self.pos_encode = PositionalEncoding(d_model)
         self.pad = pad
@@ -37,8 +39,9 @@ class DST(pl.LightningModule):
         )
         norm = torch.nn.LayerNorm(d_model)
         self.transformer = torch.nn.TransformerEncoder(encoder_layer, n_blocks, norm)
+        d2 = 1 if causal else 0
         self.to_hazard_c = torch.nn.Sequential(
-            Linear(d_model, d_model//2),
+            Linear(d_model + d2, d_model//2),
             torch.nn.ReLU(),
             Linear(d_model//2, 1),
             torch.nn.Sigmoid(),
@@ -52,6 +55,7 @@ class DST(pl.LightningModule):
         # how much to weigh MAE loss
         self.alpha = alpha
         self.dynamic = dynamic
+        self.causal = causal
 
 
     def forward(self, batch):
@@ -74,6 +78,12 @@ class DST(pl.LightningModule):
             pad_mask = (batch["vitals"][:, :, 0] == self.pad)
         x = self.pos_encode(x)
         x = self.transformer(x, mask, pad_mask)
+        if self.causal:
+            t = torch.reshape(batch["treatment"], (-1, 1, 1))
+            t = t.repeat(1, s, 1)
+            # concatenate treatment as a new feature
+            x = torch.cat((x, t), 2).float()
+        # complement of hazard
         q_hat = self.to_hazard_c(x).squeeze(2)
         s_hat = q_hat.cumprod(1).clamp(min=1e-8)
         return s_hat

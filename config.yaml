@@ -10,8 +10,9 @@ train:
     - 1 
   max_epochs: 3
   batch_size: 16
-  causal: False
   seed: 87
+
+causal: False
 
 model:
   _target_: "src.model.DST"

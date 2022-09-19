@@ -30,6 +30,8 @@ def main(cfg=None):
         (train_size, val_size, test_size),
         torch.Generator().manual_seed(cfg.train.seed)
     )
+    def collate(x):
+        return padded_collate(x, pad_index=cfg.model.pad, causal=cfg.causal)
 
     train_loader = DataLoader(
         train_set,
@@ -46,7 +48,7 @@ def main(cfg=None):
         )
     model = instantiate(
         cfg.model, n_codes=dataset.n_codes, n_demog = dataset.n_demog, 
-        n_vitals=dataset.n_vitals,
+        n_vitals=dataset.n_vitals, causal=cfg.causal,
     )
     callbacks = [ModelCheckpoint(monitor="val_mae_epoch", mode="min")]
     trainer = pl.Trainer(
@@ -59,20 +61,18 @@ def main(cfg=None):
         trainer.test(dataloaders=test_loader)
 
 
-    if cfg.train.causal:
-        dataset_treated = Mimic3Dataset(owd, seed=cfg.preprocess.seed, intervention=True)
-        dataset_control = Mimic3Dataset(owd, seed=cfg.preprocess.seed, intervention=False)
-        treated_loader = DataLoader(dataset_treated, collate, batch_size=96)
-        control_loader = DataLoader(dataset_control, collate, batch_size=96)
-        predict_t = torch.cat(trainer.predict(dataloaders=treated_loader))
-        torch.save(predict_t, "t_hat_treated.pt")
-        predict_c = torch.cat(trainer.predict(dataloaders=control_loader))
-        torch.save(predict_c, "t_hat_control.pt")
+    # if cfg.causal:
+    #     dataset_treated = Mimic3Dataset(owd, seed=cfg.preprocess.seed, intervention=True)
+    #     dataset_control = Mimic3Dataset(owd, seed=cfg.preprocess.seed, intervention=False)
+    #     treated_loader = DataLoader(dataset_treated, collate_fn=collate, batch_size=96)
+    #     control_loader = DataLoader(dataset_control, collate_fn=collate, batch_size=96)
+    #     predict_t = torch.cat(trainer.predict(dataloaders=treated_loader))
+    #     torch.save(predict_t, "t_hat_treated.pt")
+    #     predict_c = torch.cat(trainer.predict(dataloaders=control_loader))
+    #     torch.save(predict_c, "t_hat_control.pt")
 
         
-# TODO wire this up to the config
-def collate(x):
-    return padded_collate(x, -100)
+
 
 
 if __name__ == "__main__":
