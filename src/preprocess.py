@@ -46,7 +46,6 @@ class Mimic3Pipeline():
             ]
         self.stay_lengths.name="stay_length"
         self.arrays["patient_index"] = self.stay_lengths.index.to_numpy()
-        self.extract_treatment(interventions)
         self.process_patients_data()
         self.process_codes()
         self.process_vitals()
@@ -57,6 +56,7 @@ class Mimic3Pipeline():
         self.features["treated"] = 1
         self.features["control"] = 0
         df_sim = self.simulate_treatment(self.features.copy())
+        self.extract_treatment(df_sim)
         df_sim =  self.simulate_outcomes(df_sim)
         self.arrays["survival"] = df_sim["corrected_survival"].to_numpy()
         self.arrays["hazards"] = df_sim["hazard"].to_numpy()
@@ -71,10 +71,9 @@ class Mimic3Pipeline():
         log.info("Pipeline completed")
 
         
-    def extract_treatment(self, interventions):
-        treatment = interventions.groupby("subject_id")["vent"].any().astype(int)
-        self.treatment = treatment.to_frame().join(self.stay_lengths, how="right")["vent"]
-        self.arrays["treatment"] = self.treatment.to_numpy()
+    def extract_treatment(self, simulated):
+        treatment = simulated.groupby("subject_id")["A"].any().astype(int)
+        self.arrays["treatment"] = treatment.to_numpy()
 
 
     def process_patients_data(self):
@@ -126,11 +125,8 @@ class Mimic3Pipeline():
         t = df.index.get_level_values(1)
         df["baseline_hazard"] = self.H0 * np.exp(- self.labda * t)
         # apply treatment
-        # column can be "vent", "control" (all zero), or "treat" (all one)
+        # column can be "A", "control" (all zero), or "treat" (all one)
         df["hazard"] = df["baseline_hazard"] * np.exp(self.alpha * df[treatment_col])
-
-
-
         X = df[["gender", "hypertension", "coronary_ath", "atrial_fib"]]
         df["hazard"] *= np.exp((X * self.beta).sum(1))
         # temporal interaction
@@ -170,7 +166,7 @@ class Mimic3Pipeline():
 
 
     def semisynth_features(self):
-        df = self.demog[["gender", "stay_length"]].join(self.treatment)
+        df = self.demog[["gender", "stay_length"]]
         df["stay_length"] = (df["stay_length"] - df["stay_length"].mean()) / df["stay_length"].std()
         conf_codes = self.codes.copy()
         conf_codes["hypertension"] = (conf_codes["icd9_codes"] == "4019")
@@ -211,7 +207,7 @@ class Mimic3Pipeline():
         log.info(f"{n:,} total patients")
         log.info(f"{n - c:,} censored ({100*(n - c)/n:.2f} %)")
         lifetimes = df_sim.groupby(level=0)["corrected_survival"].sum().to_numpy()
-        treated_ix = df_sim.groupby(level=0)["vent"].any()
+        treated_ix = df_sim.groupby(level=0)["A"].any()
         log.info(f"Mean time to censoring or failure: {np.mean(lifetimes):.2f} hours")
         rst = self.rmst(df_sim, tau)
         log.info(f"Mean restricted survival time: {np.mean(rst):.2f} hours, tau = {tau}")

@@ -8,9 +8,9 @@ train:
   val_frac: .15
   gpus:
     - 1 
-  max_epochs: 3
-  batch_size: 16
-  seed: 87
+  max_epochs: 5
+  batch_size: 32
+  seed: 0
 
 causal: False
 
