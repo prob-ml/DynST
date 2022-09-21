@@ -61,19 +61,6 @@ def main(cfg=None):
         trainer.test(dataloaders=test_loader)
 
 
-    # if cfg.causal:
-    #     dataset_treated = Mimic3Dataset(owd, seed=cfg.preprocess.seed, intervention=True)
-    #     dataset_control = Mimic3Dataset(owd, seed=cfg.preprocess.seed, intervention=False)
-    #     treated_loader = DataLoader(dataset_treated, collate_fn=collate, batch_size=96)
-    #     control_loader = DataLoader(dataset_control, collate_fn=collate, batch_size=96)
-    #     predict_t = torch.cat(trainer.predict(dataloaders=treated_loader))
-    #     torch.save(predict_t, "t_hat_treated.pt")
-    #     predict_c = torch.cat(trainer.predict(dataloaders=control_loader))
-    #     torch.save(predict_c, "t_hat_control.pt")
-
-        
-
-
 
 if __name__ == "__main__":
     main()

@@ -16,7 +16,6 @@ class Mimic3Pipeline():
         self.input = pd.HDFStore(work_dir + "/data/all_hourly_data.h5")
         Path(f"{work_dir}/data/preprocessed_{seed}").mkdir(parents=True, exist_ok=True)
         self.outpath = f"data/preprocessed_{seed}"
-        # self.output = h5py.File(work_dir + f"/data/mimic3_preprocessed_{seed}.hdf5", "w")
         self.min_length = length_range[0]
         self.max_length = length_range[1]
         self.min_code_counts = min_code_count
@@ -213,8 +212,7 @@ class Mimic3Pipeline():
         log.info(f"Mean restricted survival time: {np.mean(rst):.2f} hours, tau = {tau}")
         unadj_ate = rst[treated_ix].mean() - rst[~treated_ix].mean()
         log.info(f"Observed treatment effect: {unadj_ate:.2f} hours")
-
-
+        # calculate true ATE
         df_treated = self.simulate_outcomes(self.features, "treated")
         rmst_treated = np.mean(self.rmst(df_treated, tau))
         df_control = self.simulate_outcomes(self.features, "control")

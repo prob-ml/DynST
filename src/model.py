@@ -24,7 +24,6 @@ class DST(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         self.embed_codes = Linear(n_codes, d_model)
-        # this extra treatment variable shouldn't be hardcoded in...
         d1 = 0 if causal else 1
         self.embed_static = Linear(d_model + n_demog + d1, d_model)
         self.embed_vitals = Linear(n_vitals, d_model)
@@ -103,7 +102,6 @@ class DST(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         s_hat =  self(batch)
         loss = self.combined_loss(s_hat, batch["survival"])
-        # loss = self.loss_fn(s_hat, batch["survival"])
         self.val_mae.update(s_hat, batch["survival"])
         self.val_ci.update(s_hat, batch["survival"])
         self.log("val_loss", loss)

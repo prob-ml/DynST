@@ -18,7 +18,6 @@ class Mimic3Dataset(Dataset):
         self.codes = self.f["codes"] + 1
         self.n_codes = len(self.code_lookup)
         self.n_vitals = self.f["vitals"].shape[1]
-        # add one for treatment variable
         self.n_demog = self.f["demog"].shape[1]
         self.pad_value = - 100
         # if supplied, represents treatment (True) or control (False)
