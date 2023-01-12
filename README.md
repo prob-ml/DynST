@@ -1,5 +1,10 @@
 # DynST
+
+[![arXiv](https://img.shields.io/badge/arXiv-<2210.15417>-<COLOR>.svg)](https://arxiv.org/abs/<2210.15417>)
+
 Dynamic Survival Models for Causal Inference with Electronic Health Records
+
+Accepted as a spotlight presentation to the [NeurIPS 2022 Workshop on Learning from Time Series for Health](https://timeseriesforhealth.github.io/)
 
 ### About
 
