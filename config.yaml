@@ -15,7 +15,7 @@ train:
 causal: False
 
 model:
-  _target_: "src.model.DST"
+  _target_: "src.model.DynST"
   d_model: 32
   n_blocks: 3
   n_heads: 8

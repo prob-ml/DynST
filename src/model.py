@@ -5,7 +5,7 @@ import math
 from torch.nn import Linear
 from .metric import MeanAbsoluteError, ConcordanceIndex
 
-class DST(pl.LightningModule):
+class DynST(pl.LightningModule):
     def __init__(
         self,
         n_codes,
