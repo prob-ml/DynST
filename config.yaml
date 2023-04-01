@@ -1,6 +1,8 @@
 preprocess:
   do: False
   seed: 30
+  propensity: .6
+
 
 
 train:

@@ -12,7 +12,8 @@ from src.dataset import Mimic3Dataset, padded_collate
 def main(cfg=None):
     owd = get_original_cwd()
     if cfg.preprocess.do:
-        pipeline = Mimic3Pipeline(owd, seed=cfg.preprocess.seed)
+        pipeline = Mimic3Pipeline(
+            owd, cfg.preprocess.propensity, seed=cfg.preprocess.seed)
         pipeline.run()
         return
     dataset = Mimic3Dataset(owd, seed=cfg.preprocess.seed)

@@ -5,17 +5,16 @@ import numpy as np
 import pandas as pd
 from scipy.special import expit, logit
 
-
 log = logging.getLogger(__name__)
 
 class Mimic3Pipeline():
     def __init__(
-        self, work_dir, length_range=(16,128), min_code_count=100, n_vitals=25, seed=28
+        self, work_dir, propensity, length_range=(16,128), min_code_count=100, n_vitals=25, seed=28
         ):
         self.work_dir = work_dir
         self.input = pd.HDFStore(work_dir + "/data/all_hourly_data.h5")
-        Path(f"{work_dir}/data/preprocessed_{seed}").mkdir(parents=True, exist_ok=True)
-        self.outpath = f"data/preprocessed_{seed}"
+        Path(f"{work_dir}/data/preprocessed_{seed}_p{propensity}").mkdir(parents=True, exist_ok=True)
+        self.outpath = f"data/preprocessed_{seed}_p{propensity}"
         self.min_length = length_range[0]
         self.max_length = length_range[1]
         self.min_code_counts = min_code_count
@@ -34,6 +33,8 @@ class Mimic3Pipeline():
         self.gamma = np.random.uniform(0.1, 0.3, size=4)
         # treatment effect on hazards
         self.alpha = -0.5
+        # propensity score for severely ill patients
+        self.pi = propensity
 
     def run(self):
         log.info("Beginning pipeline")
@@ -92,6 +93,7 @@ class Mimic3Pipeline():
         codes = self.input["codes"].reset_index()[["subject_id", "icd9_codes"]].drop_duplicates(["subject_id"])
         codes = codes.set_index("subject_id").join(self.stay_lengths, how="right")
         codes = codes.explode("icd9_codes")
+        codes["icd9_codes"] = codes["icd9_codes"].apply(lambda x: x[:4])
         code_counts = codes["icd9_codes"].value_counts()
         code_counts = code_counts[code_counts >= self.min_code_counts]
         code_counts.name = "count"
@@ -154,7 +156,7 @@ class Mimic3Pipeline():
         df_flat["critical"] = (
                 df_flat[["hypertension", "coronary_ath", "atrial_fib"]].sum(1) > 1
             ).astype(int).to_numpy()
-        df_flat["propensity"] = df_flat["critical"] * 0.8 + (1 - df_flat["critical"]) * 0.2
+        df_flat["propensity"] = df_flat["critical"] * self.pi + (1 - df_flat["critical"]) * (1 - self.pi)
         np.random.seed(self.seed)
         # randomly assign treatment
         df_flat["A"] = np.random.binomial(1, df_flat["propensity"])
@@ -169,8 +171,8 @@ class Mimic3Pipeline():
         df["stay_length"] = (df["stay_length"] - df["stay_length"].mean()) / df["stay_length"].std()
         conf_codes = self.codes.copy()
         conf_codes["hypertension"] = (conf_codes["icd9_codes"] == "4019")
-        conf_codes["coronary_ath"] = (conf_codes["icd9_codes"] == "41401")
-        conf_codes["atrial_fib"] = (conf_codes["icd9_codes"] == "42731")
+        conf_codes["coronary_ath"] = (conf_codes["icd9_codes"] == "4140")
+        conf_codes["atrial_fib"] = (conf_codes["icd9_codes"] == "4273")
         conf_codes = conf_codes.groupby(conf_codes.index)[["hypertension", "coronary_ath", "atrial_fib"]].any().astype(int)
         conf_vitals = self.vitals[["hematocrit", "hemoglobin", "platelets", "mean blood pressure"]]
         return df.join(conf_codes).join(conf_vitals)
