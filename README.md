@@ -1,6 +1,6 @@
 # DynST
 
-[![arXiv](https://img.shields.io/badge/arXiv-<2210.15417>-<COLOR>.svg)](https://arxiv.org/abs/<2210.15417>)
+[![arXiv](https://img.shields.io/badge/arXiv-<2210.15417>-<COLOR>.svg)](https://arxiv.org/abs/2210.15417)
 
 Dynamic Survival Transformers for Causal Inference with Electronic Health Records
 
